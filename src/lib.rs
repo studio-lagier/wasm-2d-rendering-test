@@ -1,7 +1,11 @@
 mod utils;
 
 use wasm_bindgen::prelude::*;
-use tiny_skia::*;
+use web_sys::{window, HtmlCanvasElement, CanvasRenderingContext2d};
+use wasm_bindgen::JsCast;
+use piet::*;
+use kurbo::*;
+use piet_web::*;
 
 extern crate web_sys;
 // A macro to provide `println!(..)`-style syntax for `console.log` logging.
@@ -27,19 +31,13 @@ pub enum Cell {
 }
 
 #[wasm_bindgen]
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-// r, g, b, a
-pub struct Pixel (u8, u8, u8, u8);
-
-#[wasm_bindgen]
 pub struct Universe {
     width: i32,
     height: i32,
     pixel_width: u32,
     pixel_height: u32,
     cells: Vec<Cell>,
-    pixmap: Pixmap
+    canvas: HtmlCanvasElement
 }
 
 impl Universe {
@@ -101,60 +99,62 @@ impl Universe {
         self.cells = next;
     }
 
-    // We map cells to pixels - this would get replaced with a proper
     fn render_board(&mut self) {
-        // Draw our grid
-        let cell_width = (self.pixel_width - 2) as f32 / self.width as f32;
-        let cell_height = (self.pixel_height - 2) as f32 / self.height as f32;
+        let window = window().unwrap();
+        let mut rc = WebRenderContext::new(self.get_context(), window);
 
-        let mut grid_color = Paint::default();
-        grid_color.set_color_rgba8(0xff, 0xdd, 0xdd, 0xdd);
-        let mut alive_color = Paint::default();
-        alive_color.set_color_rgba8(0, 0, 0, 0xff);
-        let mut dead_color = Paint::default();
-        dead_color.set_color_rgba8(0xff, 0xff, 0xff, 0xff);
+        let cell_width = (self.pixel_width as f32 - 2.) / self.width as f32;
+        let cell_height = (self.pixel_height as f32 - 2.) / self.height as f32;
 
-        // Draw our alive squares
-        // let mut alive_pb = PathBuilder::new();
-        // let mut dead_pb = PathBuilder::new();
+        let live_brush = rc.solid_brush(Color::rgb8(0, 0, 0));
+        let dead_brush = rc.solid_brush(Color::rgb8(0xff, 0xff, 0xff));
 
-        for row in 0..self.width {
-            for col in 0..self.height {
+        for row in 0..self.height {
+            for col in 0..self.width {
                 let idx = self.get_cell_index(row, col);
                 let cell = self.cells[idx];
 
-                let x = row as f32 * cell_height + 1.;
-                let y = col as f32 * cell_width + 1.;
-
-                // let loop_pb = match cell {
-                //     Cell::Alive => &mut alive_pb,
-                //     Cell::Dead => &mut dead_pb
-                // };
-
-                // loop_pb.move_to(x, y);
-                // loop_pb.line_to(x + cell_width, y);
-                // loop_pb.line_to(x + cell_width, y + cell_height);
-                // loop_pb.line_to(x, y + cell_height);
-                // loop_pb.close();
-
-                let color = match cell {
-                    Cell::Alive => &alive_color,
-                    Cell::Dead => &dead_color
+                let brush = match cell {
+                    Cell::Alive => &live_brush,
+                    Cell::Dead => &dead_brush
                 };
 
-                let rect = Rect::from_xywh(x, y, cell_width, cell_height).unwrap();
-                self.pixmap.fill_rect(rect, &color, Transform::identity(), None);
+                let x0 = (col as f32 * cell_width) as f64;
+                let y0 = (row as f32 * cell_height) as f64;
+                let x1 = x0 + cell_width as f64;
+                let y1 = y0 + cell_height as f64;
+
+                let rect = Rect::new(x0, y0, x1, y1);
+
+                rc.fill(rect, brush);
             }
         }
 
-        // let alive_path = alive_pb.finish().unwrap();
-        // let dead_path = dead_pb.finish().unwrap();
 
-        // self.pixmap.fill_path(&alive_path, &alive_color, FillRule::Winding, Transform::identity(), None);
-        // self.pixmap.fill_path(&dead_path, &dead_color, FillRule::Winding, Transform::identity(), None);
+        let line_brush = rc.solid_brush(Color::rgb8(0xdd, 0xdd, 0xdd));
+
+        for row in 0..=self.height {
+            let y = (row as f32 * cell_height) + 1.;
+            let start = Point::new(0., y as f64);
+            let end = Point::new(self.pixel_width as f64, y as f64);
+            let line = Line::new(start, end);
+
+            rc.stroke(line, &line_brush, 0.5);
+        }
+
+        for col in 0..=self.width {
+            let x = (col as f32 * cell_width) + 1.;
+            let start = Point::new(x as f64, 0.);
+            let end = Point::new(x as f64, self.pixel_width as f64);
+            let line = Line::new(start, end);
+
+            rc.stroke(line, &line_brush, 0.5);
+        }
     }
 
-    pub fn new(pixel_width: u32, pixel_height: u32) -> Universe {
+    pub fn new(pixel_width: u32, pixel_height: u32, canvas_id: &str ) -> Universe {
+        utils::set_panic_hook();
+
         let width = 64;
         let height = 64;
 
@@ -168,7 +168,16 @@ impl Universe {
             })
             .collect();
 
-        let pixmap = Pixmap::new(pixel_width, pixel_height).unwrap();
+            let window = window().unwrap();
+            let document = window.document().unwrap();
+            let canvas = document
+                .get_element_by_id(canvas_id)
+                .unwrap()
+                .dyn_into::<HtmlCanvasElement>()
+                .unwrap();
+
+            canvas.set_width(pixel_width);
+            canvas.set_height(pixel_height);
 
         Universe {
             width,
@@ -176,8 +185,17 @@ impl Universe {
             pixel_width,
             pixel_height,
             cells,
-            pixmap
+            canvas
         }
+    }
+
+    fn get_context(&self) -> CanvasRenderingContext2d {
+        self.canvas
+            .get_context("2d")
+            .unwrap()
+            .unwrap()
+            .dyn_into::<CanvasRenderingContext2d>()
+            .unwrap()
     }
 
     pub fn width(&self) -> i32 {
@@ -190,9 +208,5 @@ impl Universe {
 
     pub fn cells(&self) -> *const Cell {
         self.cells.as_ptr()
-    }
-
-    pub fn image_data(&self) -> *const u8 {
-        self.pixmap.data().as_ptr()
     }
 }
