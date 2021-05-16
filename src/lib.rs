@@ -37,7 +37,12 @@ pub struct Universe {
     pixel_width: u32,
     pixel_height: u32,
     cells: Vec<Cell>,
-    canvas: HtmlCanvasElement
+    canvas: HtmlCanvasElement,
+    start_point: Point,
+    end_point: Point,
+    line_brush: Brush,
+    live_brush: Brush,
+    dead_brush: Brush
 }
 
 impl Universe {
@@ -106,18 +111,13 @@ impl Universe {
         let cell_width = (self.pixel_width as f32 - 2.) / self.width as f32;
         let cell_height = (self.pixel_height as f32 - 2.) / self.height as f32;
 
-        let live_brush = rc.solid_brush(Color::rgb8(0, 0, 0));
-        let dead_brush = rc.solid_brush(Color::rgb8(0xff, 0xff, 0xff));
+        let mut alive = BezPath::new();
+        let mut dead = BezPath::new();
 
         for row in 0..self.height {
             for col in 0..self.width {
                 let idx = self.get_cell_index(row, col);
                 let cell = self.cells[idx];
-
-                let brush = match cell {
-                    Cell::Alive => &live_brush,
-                    Cell::Dead => &dead_brush
-                };
 
                 let x0 = (col as f32 * cell_width) as f64;
                 let y0 = (row as f32 * cell_height) as f64;
@@ -126,30 +126,44 @@ impl Universe {
 
                 let rect = Rect::new(x0, y0, x1, y1);
 
-                rc.fill(rect, brush);
+                match cell {
+                    Cell::Alive => alive.extend(rect.path_elements(1.)),
+                    Cell::Dead => dead.extend(rect.path_elements(1.))
+                }
             }
         }
 
+        rc.fill(alive, &self.live_brush);
+        rc.fill(dead, &self.dead_brush);
 
-        let line_brush = rc.solid_brush(Color::rgb8(0xdd, 0xdd, 0xdd));
+        let mut grid = BezPath::new();
 
         for row in 0..=self.height {
             let y = (row as f32 * cell_height) + 1.;
-            let start = Point::new(0., y as f64);
-            let end = Point::new(self.pixel_width as f64, y as f64);
-            let line = Line::new(start, end);
+            self.start_point.x = 0.;
+            self.start_point.y = y as f64;
 
-            rc.stroke(line, &line_brush, 0.5);
+            self.end_point.x = self.pixel_width as f64;
+            self.end_point.y = y as f64;
+
+            grid.move_to(self.start_point);
+            grid.line_to(self.end_point);
         }
 
         for col in 0..=self.width {
             let x = (col as f32 * cell_width) + 1.;
-            let start = Point::new(x as f64, 0.);
-            let end = Point::new(x as f64, self.pixel_width as f64);
-            let line = Line::new(start, end);
 
-            rc.stroke(line, &line_brush, 0.5);
+            self.start_point.x = x as f64;
+            self.start_point.y = 0.;
+
+            self.end_point.x = x as f64;
+            self.end_point.y = self.pixel_height as f64;
+
+            grid.move_to(self.start_point);
+            grid.line_to(self.end_point);
         }
+
+        rc.stroke(grid, &self.line_brush, 0.5);
     }
 
     pub fn new(pixel_width: u32, pixel_height: u32, canvas_id: &str ) -> Universe {
@@ -179,13 +193,32 @@ impl Universe {
             canvas.set_width(pixel_width);
             canvas.set_height(pixel_height);
 
+            let context = canvas.get_context("2d")
+                .unwrap()
+                .unwrap()
+                .dyn_into::<CanvasRenderingContext2d>()
+                .unwrap();
+
+            let mut rc = WebRenderContext::new(context, window);
+            let line_brush = rc.solid_brush(Color::rgb8(0xdd, 0xdd, 0xdd));
+            let live_brush = rc.solid_brush(Color::rgb8(0, 0, 0));
+            let dead_brush = rc.solid_brush(Color::rgb8(0xff, 0xff, 0xff));
+
+            let start_point = Point::ORIGIN;
+            let end_point = Point::ORIGIN;
+
         Universe {
             width,
             height,
             pixel_width,
             pixel_height,
             cells,
-            canvas
+            canvas,
+            start_point,
+            end_point,
+            line_brush,
+            live_brush,
+            dead_brush
         }
     }
 
