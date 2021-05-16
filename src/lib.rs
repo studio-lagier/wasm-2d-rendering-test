@@ -107,16 +107,13 @@ impl Universe {
         let cell_width = (self.pixel_width - 2) as f32 / self.width as f32;
         let cell_height = (self.pixel_height - 2) as f32 / self.height as f32;
 
-        let mut grid_color = Paint::default();
-        grid_color.set_color_rgba8(0xff, 0xdd, 0xdd, 0xdd);
         let mut alive_color = Paint::default();
         alive_color.set_color_rgba8(0, 0, 0, 0xff);
         let mut dead_color = Paint::default();
         dead_color.set_color_rgba8(0xff, 0xff, 0xff, 0xff);
 
-        // Draw our alive squares
-        // let mut alive_pb = PathBuilder::new();
-        // let mut dead_pb = PathBuilder::new();
+        let mut alive_pb = PathBuilder::new();
+        let mut dead_pb = PathBuilder::new();
 
         for row in 0..self.width {
             for col in 0..self.height {
@@ -126,32 +123,18 @@ impl Universe {
                 let x = row as f32 * cell_height + 1.;
                 let y = col as f32 * cell_width + 1.;
 
-                // let loop_pb = match cell {
-                //     Cell::Alive => &mut alive_pb,
-                //     Cell::Dead => &mut dead_pb
-                // };
-
-                // loop_pb.move_to(x, y);
-                // loop_pb.line_to(x + cell_width, y);
-                // loop_pb.line_to(x + cell_width, y + cell_height);
-                // loop_pb.line_to(x, y + cell_height);
-                // loop_pb.close();
-
-                let color = match cell {
-                    Cell::Alive => &alive_color,
-                    Cell::Dead => &dead_color
-                };
-
-                let rect = Rect::from_xywh(x, y, cell_width, cell_height).unwrap();
-                self.pixmap.fill_rect(rect, &color, Transform::identity(), None);
+                match cell {
+                    Cell::Alive => alive_pb.push_rect(x, y, cell_width, cell_height),
+                    Cell::Dead => dead_pb.push_rect(x, y, cell_width, cell_height)
+                }
             }
         }
 
-        // let alive_path = alive_pb.finish().unwrap();
-        // let dead_path = dead_pb.finish().unwrap();
+        let alive_path = alive_pb.finish().unwrap();
+        let dead_path = dead_pb.finish().unwrap();
 
-        // self.pixmap.fill_path(&alive_path, &alive_color, FillRule::Winding, Transform::identity(), None);
-        // self.pixmap.fill_path(&dead_path, &dead_color, FillRule::Winding, Transform::identity(), None);
+        self.pixmap.fill_path(&alive_path, &alive_color, FillRule::default(), Transform::default(), None);
+        self.pixmap.fill_path(&dead_path, &dead_color, FillRule::EvenOdd, Transform::default(), None);
     }
 
     pub fn new(pixel_width: u32, pixel_height: u32) -> Universe {
