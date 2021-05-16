@@ -1,216 +1,150 @@
-mod utils;
-
+use std::borrow::Cow;
+use winit::{
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::Window,
+};
 use wasm_bindgen::prelude::*;
 
-extern crate web_sys;
-// A macro to provide `println!(..)`-style syntax for `console.log` logging.
-macro_rules! log {
-    ( $( $t:tt )* ) => {
-        web_sys::console::log_1(&format!( $( $t )* ).into());
-    }
-}
+async fn run(event_loop: EventLoop<()>, window: Window) {
+    let size = window.inner_size();
+    let instance = wgpu::Instance::new(wgpu::BackendBit::all());
+    let surface = unsafe { instance.create_surface(&window) };
+    let adapter = instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::default(),
+            // Request an adapter which can render to our surface
+            compatible_surface: Some(&surface),
+        })
+        .await
+        .expect("Failed to find an appropriate adapter");
 
+    // Create the logical device and command queue
+    let (device, queue) = adapter
+        .request_device(
+            &wgpu::DeviceDescriptor {
+                label: None,
+                features: wgpu::Features::empty(),
+                limits: wgpu::Limits::default(),
+            },
+            None,
+        )
+        .await
+        .expect("Failed to create device");
 
-// When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
-// allocator.
-#[cfg(feature = "wee_alloc")]
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+    // Load the shaders from disk
+    let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
+        flags: wgpu::ShaderFlags::all(),
+    });
 
-#[wasm_bindgen]
-#[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Cell {
-    Dead = 0,
-    Alive = 1
-}
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[],
+        push_constant_ranges: &[],
+    });
 
-#[wasm_bindgen]
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-// r, g, b, a
-pub struct Pixel (u8, u8, u8, u8);
+    let swapchain_format = adapter.get_swap_chain_preferred_format(&surface).unwrap();
 
-#[wasm_bindgen]
-pub struct Universe {
-    width: u32,
-    height: u32,
-    pixel_width: u32,
-    pixel_height: u32,
-    cells: Vec<Cell>,
-    pixels: Vec<Pixel>
-}
+    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: None,
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: "vs_main",
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: "fs_main",
+            targets: &[swapchain_format.into()],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+    });
 
-impl Universe {
-    fn get_cell_index(&self, row: u32, col: u32) -> usize {
-        (row * self.width + col) as usize
-    }
+    let mut sc_desc = wgpu::SwapChainDescriptor {
+        usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
+        format: swapchain_format,
+        width: size.width,
+        height: size.height,
+        present_mode: wgpu::PresentMode::Mailbox,
+    };
 
-    fn get_pixel_index(&self, x: u32, y: u32) -> usize {
-        (y * self.pixel_width + x) as usize
-    }
+    let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
-    fn live_neighbor_count(&self, row: u32, col: u32) -> u8 {
-        let mut count = 0;
-        for delta_row in [self.height - 1, 0, 1].iter().cloned() {
-            for delta_col in [self.width - 1, 0, 1].iter().cloned() {
-                if delta_row == 0 && delta_col == 0 {
-                    continue;
+    event_loop.run(move |event, _, control_flow| {
+        // Have the closure take ownership of the resources.
+        // `event_loop.run` never returns, therefore we must do this to ensure
+        // the resources are properly cleaned up.
+        let _ = (&instance, &adapter, &shader, &pipeline_layout);
+
+        *control_flow = ControlFlow::Wait;
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::Resized(size),
+                ..
+            } => {
+                // Recreate the swap chain with the new size
+                sc_desc.width = size.width;
+                sc_desc.height = size.height;
+                swap_chain = device.create_swap_chain(&surface, &sc_desc);
+            }
+            Event::RedrawRequested(_) => {
+                let frame = swap_chain
+                    .get_current_frame()
+                    .expect("Failed to acquire next swap chain texture")
+                    .output;
+                let mut encoder =
+                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                {
+                    let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: None,
+                        color_attachments: &[wgpu::RenderPassColorAttachment {
+                            view: &frame.view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
+                                store: true,
+                            },
+                        }],
+                        depth_stencil_attachment: None,
+                    });
+                    rpass.set_pipeline(&render_pipeline);
+                    rpass.draw(0..3, 0..1);
                 }
 
-                let neighbor_row = (row + delta_row) % self.height;
-                let neighbor_col = (col + delta_col) % self.width;
-                let idx = self.get_cell_index(neighbor_row, neighbor_col);
-                count += self.cells[idx] as u8;
+                queue.submit(Some(encoder.finish()));
             }
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => *control_flow = ControlFlow::Exit,
+            _ => {}
         }
-
-        count
-    }
+    });
 }
 
 #[wasm_bindgen]
-impl Universe {
-    pub fn tick(&mut self) {
-        self.build_board();
-        self.render_board();
-    }
-
-    fn build_board(&mut self) {
-        let mut next = self.cells.clone();
-
-        for row in 0..self.height {
-            for col in 0..self.width {
-                let idx = self.get_cell_index(row, col);
-                let cell = self.cells[idx];
-                let live_neighbors = self.live_neighbor_count(row, col);
-
-                let next_cell = match (cell, live_neighbors) {
-                    (Cell::Alive, x) if x < 2 => Cell::Dead,
-                    (Cell::Alive, 2) | (Cell::Alive, 3) => Cell::Alive,
-                    (Cell::Alive, x) if x > 3 => Cell::Dead,
-                    (Cell::Dead, 3) => Cell::Alive,
-                    (otherwise, _) => otherwise,
-                };
-
-                next[idx] = next_cell;
-            }
-        }
-
-        self.cells = next;
-    }
-
-    // We map cells to pixels - this would get replaced with a proper
-    fn render_board(&mut self) {
-        // Draw our grid
-        // Whole pixel offsets only for now
-        let cell_width = (self.pixel_width - 2) as f32 / self.width as f32;
-        let cell_height = (self.pixel_height - 2) as f32 / self.height as f32;
-
-        for row in 0..self.width {
-            for col in 0..self.height {
-                let idx = self.get_cell_index(row, col);
-                let cell = self.cells[idx];
-
-                self.draw_square(row, col, cell_width, cell_height, &cell);
-            }
-        }
-
-        for row in 0 .. self.height {
-            self.draw_row(row, cell_height);
-        }
-
-        for col in 0 .. self.width {
-            self.draw_col(col, cell_width);
-        }
-    }
-
-    fn draw_row(&mut self, row: u32, cell_height: f32) {
-        // Round to whole pixel
-        let y = (row as f32 * cell_height).round() as u32;
-
-        for x in 0..self.pixel_width {
-            let idx = self.get_pixel_index(x, y);
-            self.pixels[idx] = Pixel(0xdd, 0xdd, 0xdd, 0xff);
-        }
-    }
-
-    fn draw_col(&mut self, col: u32, cell_width: f32) {
-        // Round to whole pixel value
-        let x = (col as f32 * cell_width).round() as u32;
-
-        for y in 0..self.pixel_height {
-            let idx = self.get_pixel_index(x, y);
-            self.pixels[idx] = Pixel(0xdd, 0xdd, 0xdd, 0xff);
-        }
-    }
-
-    fn draw_square(&mut self, row: u32, col: u32, width: f32, height: f32, cell: &Cell) {
-
-        let start_x = (row as f32 * width).round() as u32;
-        let start_y = (col as f32 * height).round() as u32;
-
-        let end_x = (start_x as f32 + width).round() as u32;
-        let end_y = (start_y as f32 + height).round() as u32;
-
-        let pixel = match cell {
-            Cell::Alive => Pixel(0, 0, 0, 0xff),
-            Cell::Dead => Pixel(0, 0, 0, 0)
-        };
-
-        for curr_x in start_x ..= end_x {
-            for curr_y in start_y ..= end_y {
-                let idx = self.get_pixel_index(curr_x, curr_y);
-                self.pixels[idx] = pixel;
-            }
-        }
-    }
-
-    pub fn new(pixel_width: u32, pixel_height: u32) -> Universe {
-        utils::set_panic_hook();
-
-        let width = 64;
-        let height = 64;
-
-        let cells = (0..width * height)
-            .map(|i| {
-                if i % 2 == 0 || i % 7 == 0 {
-                    Cell::Alive
-                } else {
-                    Cell::Dead
-                }
+pub fn main() {
+    let event_loop = EventLoop::new();
+    let window = winit::window::Window::new(&event_loop).unwrap();
+    #[cfg(target_arch = "wasm32")]
+    {
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        console_log::init().expect("could not initialize logger");
+        use winit::platform::web::WindowExtWebSys;
+        // On wasm, append the canvas to the document body
+        web_sys::window()
+            .and_then(|win| win.document())
+            .and_then(|doc| doc.body())
+            .and_then(|body| {
+                body.append_child(&web_sys::Element::from(window.canvas()))
+                    .ok()
             })
-            .collect();
-
-        let pixels = (0..pixel_width * pixel_height)
-            .map(|_| {
-                Pixel(0xff, 0xff, 0xff, 0xff)
-            })
-            .collect();
-
-        Universe {
-            width,
-            height,
-            pixel_width,
-            pixel_height,
-            cells,
-            pixels
-        }
-    }
-
-    pub fn width(&self) -> u32 {
-        self.width
-    }
-
-    pub fn height(&self) -> u32 {
-        self.height
-    }
-
-    pub fn cells(&self) -> *const Cell {
-        self.cells.as_ptr()
-    }
-
-    pub fn image_data(&self) -> *const Pixel {
-        self.pixels.as_ptr()
+            .expect("couldn't append canvas to document body");
+        wasm_bindgen_futures::spawn_local(run(event_loop, window));
     }
 }
