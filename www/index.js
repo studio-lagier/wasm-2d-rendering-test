@@ -14,8 +14,6 @@ canvas.height = 768;
 canvas.width = 768;
 
 const universe = Universe.new(canvas.width, canvas.height);
-// const width = universe.width();
-// const height = universe.height();
 
 const ctx = canvas.getContext('2d');
 

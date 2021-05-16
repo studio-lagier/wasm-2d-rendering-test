@@ -1,7 +1,6 @@
 mod utils;
 
 use wasm_bindgen::prelude::*;
-use tiny_skia::*;
 
 extern crate web_sys;
 // A macro to provide `println!(..)`-style syntax for `console.log` logging.
@@ -34,24 +33,24 @@ pub struct Pixel (u8, u8, u8, u8);
 
 #[wasm_bindgen]
 pub struct Universe {
-    width: i32,
-    height: i32,
+    width: u32,
+    height: u32,
     pixel_width: u32,
     pixel_height: u32,
     cells: Vec<Cell>,
-    pixmap: Pixmap
+    pixels: Vec<Pixel>
 }
 
 impl Universe {
-    fn get_cell_index(&self, row: i32, col: i32) -> usize {
+    fn get_cell_index(&self, row: u32, col: u32) -> usize {
         (row * self.width + col) as usize
     }
 
-    fn get_pixel_index(&self, row: i32, col: i32) -> usize {
-        ((row * self.width + col) * 4) as usize
+    fn get_pixel_index(&self, x: u32, y: u32) -> usize {
+        (y * self.pixel_width + x) as usize
     }
 
-    fn live_neighbor_count(&self, row: i32, col: i32) -> u8 {
+    fn live_neighbor_count(&self, row: u32, col: u32) -> u8 {
         let mut count = 0;
         for delta_row in [self.height - 1, 0, 1].iter().cloned() {
             for delta_col in [self.width - 1, 0, 1].iter().cloned() {
@@ -104,57 +103,72 @@ impl Universe {
     // We map cells to pixels - this would get replaced with a proper
     fn render_board(&mut self) {
         // Draw our grid
+        // Whole pixel offsets only for now
         let cell_width = (self.pixel_width - 2) as f32 / self.width as f32;
         let cell_height = (self.pixel_height - 2) as f32 / self.height as f32;
-
-        let mut grid_color = Paint::default();
-        grid_color.set_color_rgba8(0xff, 0xdd, 0xdd, 0xdd);
-        let mut alive_color = Paint::default();
-        alive_color.set_color_rgba8(0, 0, 0, 0xff);
-        let mut dead_color = Paint::default();
-        dead_color.set_color_rgba8(0xff, 0xff, 0xff, 0xff);
-
-        // Draw our alive squares
-        // let mut alive_pb = PathBuilder::new();
-        // let mut dead_pb = PathBuilder::new();
 
         for row in 0..self.width {
             for col in 0..self.height {
                 let idx = self.get_cell_index(row, col);
                 let cell = self.cells[idx];
 
-                let x = row as f32 * cell_height + 1.;
-                let y = col as f32 * cell_width + 1.;
-
-                // let loop_pb = match cell {
-                //     Cell::Alive => &mut alive_pb,
-                //     Cell::Dead => &mut dead_pb
-                // };
-
-                // loop_pb.move_to(x, y);
-                // loop_pb.line_to(x + cell_width, y);
-                // loop_pb.line_to(x + cell_width, y + cell_height);
-                // loop_pb.line_to(x, y + cell_height);
-                // loop_pb.close();
-
-                let color = match cell {
-                    Cell::Alive => &alive_color,
-                    Cell::Dead => &dead_color
-                };
-
-                let rect = Rect::from_xywh(x, y, cell_width, cell_height).unwrap();
-                self.pixmap.fill_rect(rect, &color, Transform::identity(), None);
+                self.draw_square(row, col, cell_width, cell_height, &cell);
             }
         }
 
-        // let alive_path = alive_pb.finish().unwrap();
-        // let dead_path = dead_pb.finish().unwrap();
+        for row in 0 .. self.height {
+            self.draw_row(row, cell_height);
+        }
 
-        // self.pixmap.fill_path(&alive_path, &alive_color, FillRule::Winding, Transform::identity(), None);
-        // self.pixmap.fill_path(&dead_path, &dead_color, FillRule::Winding, Transform::identity(), None);
+        for col in 0 .. self.width {
+            self.draw_col(col, cell_width);
+        }
+    }
+
+    fn draw_row(&mut self, row: u32, cell_height: f32) {
+        // Round to whole pixel
+        let y = (row as f32 * cell_height).round() as u32;
+
+        for x in 0..self.pixel_width {
+            let idx = self.get_pixel_index(x, y);
+            self.pixels[idx] = Pixel(0xdd, 0xdd, 0xdd, 0xff);
+        }
+    }
+
+    fn draw_col(&mut self, col: u32, cell_width: f32) {
+        // Round to whole pixel value
+        let x = (col as f32 * cell_width).round() as u32;
+
+        for y in 0..self.pixel_height {
+            let idx = self.get_pixel_index(x, y);
+            self.pixels[idx] = Pixel(0xdd, 0xdd, 0xdd, 0xff);
+        }
+    }
+
+    fn draw_square(&mut self, row: u32, col: u32, width: f32, height: f32, cell: &Cell) {
+
+        let start_x = (row as f32 * width).round() as u32;
+        let start_y = (col as f32 * height).round() as u32;
+
+        let end_x = (start_x as f32 + width).round() as u32;
+        let end_y = (start_y as f32 + height).round() as u32;
+
+        let pixel = match cell {
+            Cell::Alive => Pixel(0, 0, 0, 0xff),
+            Cell::Dead => Pixel(0, 0, 0, 0)
+        };
+
+        for curr_x in start_x ..= end_x {
+            for curr_y in start_y ..= end_y {
+                let idx = self.get_pixel_index(curr_x, curr_y);
+                self.pixels[idx] = pixel;
+            }
+        }
     }
 
     pub fn new(pixel_width: u32, pixel_height: u32) -> Universe {
+        utils::set_panic_hook();
+
         let width = 64;
         let height = 64;
 
@@ -168,7 +182,11 @@ impl Universe {
             })
             .collect();
 
-        let pixmap = Pixmap::new(pixel_width, pixel_height).unwrap();
+        let pixels = (0..pixel_width * pixel_height)
+            .map(|_| {
+                Pixel(0xff, 0xff, 0xff, 0xff)
+            })
+            .collect();
 
         Universe {
             width,
@@ -176,15 +194,15 @@ impl Universe {
             pixel_width,
             pixel_height,
             cells,
-            pixmap
+            pixels
         }
     }
 
-    pub fn width(&self) -> i32 {
+    pub fn width(&self) -> u32 {
         self.width
     }
 
-    pub fn height(&self) -> i32 {
+    pub fn height(&self) -> u32 {
         self.height
     }
 
@@ -192,7 +210,7 @@ impl Universe {
         self.cells.as_ptr()
     }
 
-    pub fn image_data(&self) -> *const u8 {
-        self.pixmap.data().as_ptr()
+    pub fn image_data(&self) -> *const Pixel {
+        self.pixels.as_ptr()
     }
 }
