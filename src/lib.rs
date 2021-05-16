@@ -145,6 +145,7 @@ pub fn main() {
                     .ok()
             })
             .expect("couldn't append canvas to document body");
+
         wasm_bindgen_futures::spawn_local(run(event_loop, window));
     }
 }
