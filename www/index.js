@@ -19,7 +19,7 @@ const renderLoop = () => {
   const FPS = 1000 / timeSinceLastFrame;
   fpsCounter.textContent = FPS;
 
-  requestAnimationFrame(renderLoop);
+  setImmediate(renderLoop);
 };
 
-requestAnimationFrame(renderLoop);
+renderLoop();
