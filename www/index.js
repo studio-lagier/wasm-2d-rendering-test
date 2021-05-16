@@ -36,7 +36,7 @@ const renderLoop = () => {
   const FPS = 1000 / timeSinceLastFrame;
   fpsCounter.textContent = Math.round(FPS);
 
-  requestAnimationFrame(renderLoop);
+  setImmediate(renderLoop);
 };
 
 const getIndex = (row, column) => {
@@ -90,4 +90,4 @@ const drawCells = () => {
 
 drawGrid();
 drawCells();
-requestAnimationFrame(renderLoop);
+renderLoop();
