@@ -41,8 +41,7 @@ pub struct Universe {
     start_point: Point,
     end_point: Point,
     line_brush: Brush,
-    live_brush: Brush,
-    dead_brush: Brush
+    live_brush: Brush
 }
 
 impl Universe {
@@ -108,11 +107,14 @@ impl Universe {
         let window = window().unwrap();
         let mut rc = WebRenderContext::new(self.get_context(), window);
 
+        let whole_board = Rect::new(0., 0., self.pixel_width as f64, self.pixel_height as f64);
+
+        rc.clear(whole_board, Color::rgb8(0xff, 0xff, 0xff));
+
         let cell_width = (self.pixel_width as f32 - 2.) / self.width as f32;
         let cell_height = (self.pixel_height as f32 - 2.) / self.height as f32;
 
         let mut alive = BezPath::new();
-        let mut dead = BezPath::new();
 
         for row in 0..self.height {
             for col in 0..self.width {
@@ -128,13 +130,12 @@ impl Universe {
 
                 match cell {
                     Cell::Alive => alive.extend(rect.path_elements(1.)),
-                    Cell::Dead => dead.extend(rect.path_elements(1.))
+                    _ => ()
                 }
             }
         }
 
         rc.fill(alive, &self.live_brush);
-        rc.fill(dead, &self.dead_brush);
 
         let mut grid = BezPath::new();
 
@@ -202,7 +203,6 @@ impl Universe {
             let mut rc = WebRenderContext::new(context, window);
             let line_brush = rc.solid_brush(Color::rgb8(0xdd, 0xdd, 0xdd));
             let live_brush = rc.solid_brush(Color::rgb8(0, 0, 0));
-            let dead_brush = rc.solid_brush(Color::rgb8(0xff, 0xff, 0xff));
 
             let start_point = Point::ORIGIN;
             let end_point = Point::ORIGIN;
@@ -218,7 +218,6 @@ impl Universe {
             end_point,
             line_brush,
             live_brush,
-            dead_brush
         }
     }
 
