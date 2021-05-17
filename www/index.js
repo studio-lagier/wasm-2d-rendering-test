@@ -34,7 +34,7 @@ const renderLoop = () => {
   const timeSinceLastFrame = now - currentTime;
   currentTime = now;
 
-  const FPS = 1000 / timeSinceLastFrame;
+  const FPS = Math.round(1000 / timeSinceLastFrame);
   fpsCounter.textContent = FPS;
 
   setImmediate(renderLoop);

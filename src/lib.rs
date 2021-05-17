@@ -107,10 +107,16 @@ impl Universe {
         let cell_width = (self.pixel_width - 2) as f32 / self.width as f32;
         let cell_height = (self.pixel_height - 2) as f32 / self.height as f32;
 
+        self.clear_board();
+
         for row in 0..self.width {
             for col in 0..self.height {
                 let idx = self.get_cell_index(row, col);
                 let cell = self.cells[idx];
+
+                if cell == Cell::Dead {
+                    continue;
+                }
 
                 self.draw_square(row, col, cell_width, cell_height, &cell);
             }
@@ -153,16 +159,20 @@ impl Universe {
         let end_x = (start_x as f32 + width).round() as u32;
         let end_y = (start_y as f32 + height).round() as u32;
 
-        let pixel = match cell {
-            Cell::Alive => Pixel(0, 0, 0, 0xff),
-            Cell::Dead => Pixel(0, 0, 0, 0)
-        };
+        let pixel = Pixel(0, 0, 0, 0xff);
 
         for curr_x in start_x ..= end_x {
             for curr_y in start_y ..= end_y {
                 let idx = self.get_pixel_index(curr_x, curr_y);
                 self.pixels[idx] = pixel;
             }
+        }
+    }
+
+    fn clear_board(&mut self) {
+        let pixel = Pixel(0xff, 0xff, 0xff, 0xff);
+        for idx in 0.. self.pixels.len() {
+            self.pixels[idx] = pixel;
         }
     }
 
