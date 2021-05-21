@@ -8,7 +8,7 @@ const ALIVE_COLOR = "#000000";
 
 const canvas = document.getElementById('game-of-life-canvas');
 const fpsCounter = document.getElementById('fps-count');
-let currentTime = Date.now();
+let currentTime = performance.now();
 
 const universe = Universe.new(canvas.width, canvas.height);
 
@@ -18,6 +18,7 @@ canvas.height = (CELL_SIZE + 1) * height + 1;
 canvas.width = (CELL_SIZE + 1) * width + 1;
 
 const ctx = canvas.getContext('2d');
+const lastHundredFrames = [];
 
 // JS-driven loop. Can we make it Rust-driven?
 // Answer: Unlikely, unless we want to use RAF always since it seems that Rust
@@ -31,12 +32,19 @@ const renderLoop = () => {
   drawCells();
 
 
-  const now = Date.now();
+  const now = performance.now();
   const timeSinceLastFrame = now - currentTime;
   currentTime = now;
 
   const FPS = 1000 / timeSinceLastFrame;
-  fpsCounter.textContent = Math.round(FPS);
+  if (lastHundredFrames.length > 100) {
+    lastHundredFrames.unshift();
+  }
+
+  lastHundredFrames.push(FPS);
+
+  const averageFPS = lastHundredFrames.reduce((a, b) => a + b) / lastHundredFrames.length;
+  fpsCounter.textContent = Math.round(averageFPS);
 
   setImmediate(renderLoop);
 };
