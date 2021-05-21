@@ -103,17 +103,17 @@ impl Universe {
 
     // We map cells to pixels - this would get replaced with a proper
     fn render_board(&mut self) {
+        // Clear the board
+        self.pixmap.fill(Color::WHITE);
+
         // Draw our grid
         let cell_width = (self.pixel_width - 2) as f32 / self.width as f32;
         let cell_height = (self.pixel_height - 2) as f32 / self.height as f32;
 
         let mut alive_color = Paint::default();
         alive_color.set_color_rgba8(0, 0, 0, 0xff);
-        let mut dead_color = Paint::default();
-        dead_color.set_color_rgba8(0xff, 0xff, 0xff, 0xff);
 
         let mut alive_pb = PathBuilder::new();
-        let mut dead_pb = PathBuilder::new();
 
         for row in 0..self.width {
             for col in 0..self.height {
@@ -125,16 +125,35 @@ impl Universe {
 
                 match cell {
                     Cell::Alive => alive_pb.push_rect(x, y, cell_width, cell_height),
-                    Cell::Dead => dead_pb.push_rect(x, y, cell_width, cell_height)
+                    _ => ()
                 }
             }
         }
 
         let alive_path = alive_pb.finish().unwrap();
-        let dead_path = dead_pb.finish().unwrap();
 
         self.pixmap.fill_path(&alive_path, &alive_color, FillRule::default(), Transform::default(), None);
-        self.pixmap.fill_path(&dead_path, &dead_color, FillRule::EvenOdd, Transform::default(), None);
+
+        let mut grid_path = PathBuilder::new();
+        for row in 0..=self.height {
+            let y = (row as f32 * cell_height) + 1.;
+
+            grid_path.move_to(0., y);
+            grid_path.line_to(self.pixel_width as f32, y);
+        }
+
+        for col in 0..=self.width {
+            let x = (col as f32 * cell_width) + 1.;
+
+            grid_path.move_to(x, 0.);
+            grid_path.line_to(x, self.pixel_height as f32);
+        }
+
+        let grid_path = grid_path.finish().unwrap();
+
+        let mut grid_paint = Paint::default();
+        grid_paint.set_color_rgba8(0xdd, 0xdd, 0xdd, 0xff);
+        self.pixmap.stroke_path(&grid_path, &grid_paint, &Stroke::default(), Transform::default(), None);
     }
 
     pub fn new(pixel_width: u32, pixel_height: u32) -> Universe {
