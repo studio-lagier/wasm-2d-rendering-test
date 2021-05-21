@@ -2,7 +2,8 @@ import { Universe, Cell } from "wasm-game-of-life";
 import { memory } from "wasm-game-of-life/wasm_game_of_life_bg";
 
 const fpsCounter = document.getElementById('fps-count');
-let currentTime = Date.now();
+let currentTime = performance.now();
+const lastHundredFrames = [];
 
 const universe = Universe.new(768, 768, 'game-of-life-canvas');
 
@@ -12,12 +13,19 @@ const universe = Universe.new(768, 768, 'game-of-life-canvas');
 const renderLoop = () => {
   universe.tick();
 
-  const now = Date.now();
+  const now = performance.now();
   const timeSinceLastFrame = now - currentTime;
   currentTime = now;
 
   const FPS = 1000 / timeSinceLastFrame;
-  fpsCounter.textContent = Math.round(FPS);
+  if (lastHundredFrames.length > 100) {
+    lastHundredFrames.unshift();
+  }
+
+  lastHundredFrames.push(FPS);
+
+  const averageFPS = lastHundredFrames.reduce((a, b) => a + b) / lastHundredFrames.length;
+  fpsCounter.textContent = Math.round(averageFPS);
 
   setImmediate(renderLoop);
 };
