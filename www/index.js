@@ -25,6 +25,8 @@ const ctx = canvas.getContext('2d');
 const renderLoop = () => {
   universe.tick();
 
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
   drawGrid();
   drawCells();
 
@@ -72,9 +74,9 @@ const drawCells = () => {
     for (let col = 0; col < width; col++) {
       const idx = getIndex(row, col);
 
-      ctx.fillStyle = cells[idx] === Cell.Dead
-        ? DEAD_COLOR
-        : ALIVE_COLOR;
+      if(cells[idx] !== Cell.Alive) continue;
+
+      ctx.fillStyle = ALIVE_COLOR;
 
       ctx.fillRect(
         col * (CELL_SIZE + 1) + 1,
