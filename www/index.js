@@ -8,7 +8,8 @@ const ALIVE_COLOR = "#000000";
 
 const canvas = document.getElementById('game-of-life-canvas');
 const fpsCounter = document.getElementById('fps-count');
-let currentTime = Date.now();
+let currentTime = performance.now();
+let lastHundredFrames = [];
 
 canvas.height = 768;
 canvas.width = 768;
@@ -30,12 +31,19 @@ const renderLoop = () => {
   imageData.data.set(pixels);
   ctx.putImageData(imageData, 0, 0);
 
-  const now = Date.now();
+  const now = performance.now();
   const timeSinceLastFrame = now - currentTime;
   currentTime = now;
 
-  const FPS = Math.round(1000 / timeSinceLastFrame);
-  fpsCounter.textContent = FPS;
+  const FPS = 1000 / timeSinceLastFrame;
+  if (lastHundredFrames.length > 100) {
+    lastHundredFrames.unshift();
+  }
+
+  lastHundredFrames.push(FPS);
+
+  const averageFPS = lastHundredFrames.reduce((a, b) => a + b) / lastHundredFrames.length;
+  fpsCounter.textContent = Math.round(averageFPS);
 
   setImmediate(renderLoop);
 };
