@@ -3,9 +3,29 @@ mod utils;
 use wasm_bindgen::prelude::*;
 use web_sys::{window, HtmlCanvasElement, CanvasRenderingContext2d};
 use wasm_bindgen::JsCast;
-use piet::*;
-use kurbo::*;
-use piet_web::*;
+use winit::window::WindowBuilder;
+use winit::dpi::PhysicalSize;
+use winit::event_loop::EventLoop;
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::WindowBuilderExtWebSys;
+use femtovg::{
+    //CompositeOperation,
+    renderer::OpenGl,
+    Align,
+    Baseline,
+    Canvas,
+    Color,
+    FillRule,
+    FontId,
+    ImageFlags,
+    ImageId,
+    LineCap,
+    LineJoin,
+    Paint,
+    Path,
+    Renderer,
+    Solidity,
+};
 
 extern crate web_sys;
 // A macro to provide `println!(..)`-style syntax for `console.log` logging.
@@ -37,11 +57,8 @@ pub struct Universe {
     pixel_width: u32,
     pixel_height: u32,
     cells: Vec<Cell>,
-    canvas: HtmlCanvasElement,
-    start_point: Point,
-    end_point: Point,
-    line_brush: Brush,
-    live_brush: Brush
+    window: winit::window::Window,
+    canvas: Canvas<OpenGl>
 }
 
 impl Universe {
@@ -104,70 +121,58 @@ impl Universe {
     }
 
     fn render_board(&mut self) {
-        let window = window().unwrap();
-        let mut rc = WebRenderContext::new(self.get_context(), window);
+        let alive_color = Color::rgb(0, 0, 0);
+        let dead_color = Color::rgb(255, 255, 255);
 
-        let whole_board = Rect::new(0., 0., self.pixel_width as f64, self.pixel_height as f64);
-
-        rc.clear(whole_board, Color::rgb8(0xff, 0xff, 0xff));
+        self.canvas.clear_rect(0, 0, self.pixel_width, self.pixel_height, dead_color);
 
         let cell_width = (self.pixel_width as f32 - 2.) / self.width as f32;
         let cell_height = (self.pixel_height as f32 - 2.) / self.height as f32;
 
-        let mut alive = BezPath::new();
+
+        let mut alive_path = Path::new();
 
         for row in 0..self.height {
             for col in 0..self.width {
                 let idx = self.get_cell_index(row, col);
                 let cell = self.cells[idx];
 
-                let x0 = (col as f32 * cell_width) as f64;
-                let y0 = (row as f32 * cell_height) as f64;
-                let x1 = x0 + cell_width as f64;
-                let y1 = y0 + cell_height as f64;
-
-                let rect = Rect::new(x0, y0, x1, y1);
+                let x = col as f32 * cell_width;
+                let y = row as f32 * cell_height;
 
                 match cell {
-                    Cell::Alive => alive.extend(rect.path_elements(1.)),
+                    Cell::Alive => alive_path.rect(x, y, cell_width, cell_height),
                     _ => ()
                 }
             }
         }
 
-        rc.fill(alive, &self.live_brush);
+        self.canvas.fill_path(&mut alive_path, Paint::color(alive_color));
 
-        let mut grid = BezPath::new();
+        let mut grid = Path::new();
 
         for row in 0..=self.height {
             let y = (row as f32 * cell_height) + 1.;
-            self.start_point.x = 0.;
-            self.start_point.y = y as f64;
 
-            self.end_point.x = self.pixel_width as f64;
-            self.end_point.y = y as f64;
-
-            grid.move_to(self.start_point);
-            grid.line_to(self.end_point);
+            grid.move_to(0., y);
+            grid.line_to(self.pixel_width as f32, y);
         }
 
         for col in 0..=self.width {
             let x = (col as f32 * cell_width) + 1.;
 
-            self.start_point.x = x as f64;
-            self.start_point.y = 0.;
-
-            self.end_point.x = x as f64;
-            self.end_point.y = self.pixel_height as f64;
-
-            grid.move_to(self.start_point);
-            grid.line_to(self.end_point);
+            grid.move_to(x, 0.);
+            grid.line_to(x, self.pixel_height as f32);
         }
 
-        rc.stroke(grid, &self.line_brush, 0.5);
+        self.canvas.stroke_path(&mut grid, Paint::color(alive_color));
+
+        self.canvas.flush();
     }
 
+    #[cfg(target_arch = "wasm32")]
     pub fn new(pixel_width: u32, pixel_height: u32, canvas_id: &str ) -> Universe {
+
         utils::set_panic_hook();
 
         let width = 64;
@@ -183,29 +188,34 @@ impl Universe {
             })
             .collect();
 
-            let window = window().unwrap();
-            let document = window.document().unwrap();
-            let canvas = document
-                .get_element_by_id(canvas_id)
-                .unwrap()
-                .dyn_into::<HtmlCanvasElement>()
-                .unwrap();
+        let canvas_el = web_sys::window()
+            .unwrap()
+            .document()
+            .unwrap()
+            .get_element_by_id(canvas_id)
+            .unwrap()
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .unwrap();
 
-            canvas.set_width(pixel_width);
-            canvas.set_height(pixel_height);
+        let renderer = OpenGl::new_from_html_canvas(&canvas_el).expect("Cannot create renderer");
 
-            let context = canvas.get_context("2d")
-                .unwrap()
-                .unwrap()
-                .dyn_into::<CanvasRenderingContext2d>()
-                .unwrap();
+        let el = EventLoop::new();
 
-            let mut rc = WebRenderContext::new(context, window);
-            let line_brush = rc.solid_brush(Color::rgb8(0xdd, 0xdd, 0xdd));
-            let live_brush = rc.solid_brush(Color::rgb8(0, 0, 0));
+        let window = WindowBuilder::new()
+            .with_canvas(Some(canvas_el))
+            .build(&el)
+            .unwrap();
 
-            let start_point = Point::ORIGIN;
-            let end_point = Point::ORIGIN;
+        let dpi = window.scale_factor();
+
+        let size = PhysicalSize::new(pixel_width as f64 * dpi, pixel_height as f64 * dpi);
+
+        window.set_inner_size(size);
+
+        let mut canvas = Canvas::new(renderer).expect("Cannot create canvas");
+
+        canvas.set_size(size.width as u32, size.height as u32, dpi as f32);
+        // canvas.scale(2., 2.);
 
         Universe {
             width,
@@ -213,21 +223,9 @@ impl Universe {
             pixel_width,
             pixel_height,
             cells,
-            canvas,
-            start_point,
-            end_point,
-            line_brush,
-            live_brush,
+            window,
+            canvas
         }
-    }
-
-    fn get_context(&self) -> CanvasRenderingContext2d {
-        self.canvas
-            .get_context("2d")
-            .unwrap()
-            .unwrap()
-            .dyn_into::<CanvasRenderingContext2d>()
-            .unwrap()
     }
 
     pub fn width(&self) -> i32 {

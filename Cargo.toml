@@ -11,10 +11,10 @@ crate-type = ["cdylib", "rlib"]
 default = ["console_error_panic_hook"]
 
 [dependencies]
-piet = "0.4"
-piet-web = "0.4"
+femtovg = "0.1"
 wasm-bindgen = "0.2.63"
 web-sys = { version = "0.3", features = ["console", "CanvasRenderingContext2d", "Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement"] }
+winit = { version = "0.25.0", default-features = false, features = ["web-sys"] }
 
 # The `console_error_panic_hook` crate provides better debugging of panics by
 # logging them with `console.error`. This is great for development, but requires
