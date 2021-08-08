@@ -2,8 +2,8 @@ This is a repo of simple benchmarks across different rendering solutions. Check 
 
 To build:
 
-1. `cd www && yarn && yarn start`
-2. In a separate terminal, from the project root: `cargo watch -i "pkg/*" -s "wasm-pack build"`
+1. `cargo watch -i "pkg/*" -s "wasm-pack build"`
+2. In a separate terminal, from the project root: `cd www && yarn && yarn start`
 3. Navigate to `localhost:8080` in a browser.
 4. Game of life should start.
 
